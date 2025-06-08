@@ -39,23 +39,31 @@ async def list_resources() -> list[Resource]:
     try:
         conn = pymssql.connect(**config)
         cursor = conn.cursor()
-        # Query to get user tables from the current database
+        # Query to get user tables with descriptions from the current database
         cursor.execute("""
-            SELECT TABLE_NAME 
-            FROM INFORMATION_SCHEMA.TABLES 
-            WHERE TABLE_TYPE = 'BASE TABLE'
+            SELECT 
+                t.TABLE_NAME,
+                ISNULL(ep.value, '') as TABLE_DESCRIPTION
+            FROM INFORMATION_SCHEMA.TABLES t
+            LEFT JOIN sys.tables st ON st.name = t.TABLE_NAME
+            LEFT JOIN sys.extended_properties ep ON ep.major_id = st.object_id 
+                AND ep.minor_id = 0 
+                AND ep.name = 'MS_Description'
+            WHERE t.TABLE_TYPE = 'BASE TABLE'
         """)
         tables = cursor.fetchall()
         logger.info(f"Found tables: {tables}")
         
         resources = []
         for table in tables:
+            table_name = table[0]
+            table_description = table[1] if table[1] else f"Data in table: {table_name}"
             resources.append(
                 Resource(
-                    uri=f"mssql://{table[0]}/data",
-                    name=f"Table: {table[0]}",
+                    uri=f"mssql://{table_name}/data",
+                    name=f"Table: {table_name}",
                     mimeType="text/plain",
-                    description=f"Data in table: {table[0]}"
+                    description=table_description
                 )
             )
         cursor.close()
